@@ -5,7 +5,7 @@
 ### Directory Structure
 
 ```
-prefect-server/
+soc_validation/
 ├── .env.example                    # Environment variable template
 ├── .gitignore                      # Git ignore patterns
 ├── docker-compose.yml              # Main orchestration file
