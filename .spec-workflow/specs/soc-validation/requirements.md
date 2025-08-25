@@ -2,11 +2,11 @@
 
 ## Introduction
 
-This feature implements a minimum viable Prefect-based test infrastructure for software stack validation on SoC hardware, targeting a 3-month development timeline. The system enables compiler and runtime engineering teams to automate test execution on real hardware, reducing manual coordination overhead by 50% through basic automation and real-time notifications. Following the product steering vision, this MVP focuses on delivering a functional system for 1-2 pilot teams with 10-20 boards.
+The soc-validation project implements a minimum viable Prefect-based test infrastructure for software stack validation on SoC hardware, targeting a 3-month development timeline. The system enables compiler and runtime engineering teams to automate test execution on real hardware, reducing manual coordination overhead by 50% through basic automation and real-time notifications. Following the product steering vision, this MVP focuses on delivering a functional system for 1-2 pilot teams with 10-20 boards.
 
 ## Alignment with Product Vision
 
-Per the product steering document, this infrastructure addresses critical needs for software stack engineering teams:
+Per the product steering document, the soc-validation infrastructure addresses critical needs for software stack engineering teams:
 - Reduces manual coordination from 60% to 30% of engineer time (50% reduction)
 - Provides basic automated test execution on actual SoC hardware
 - Enables compiler and runtime validation with faster feedback loops

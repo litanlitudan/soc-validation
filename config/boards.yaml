@@ -1,0 +1,45 @@
+# SoC Board Configuration
+# This file defines the available boards for testing
+
+boards:
+  # Lab Site A - SoC Family A boards
+  - board_id: soc-a-001
+    soc_family: socA
+    board_ip: 10.1.1.101
+    telnet_port: 23
+    pdu_host: pdu-a.lab.local
+    pdu_outlet: 1
+    location: lab-site-a
+    
+  - board_id: soc-a-002
+    soc_family: socA
+    board_ip: 10.1.1.102
+    telnet_port: 23
+    pdu_host: pdu-a.lab.local
+    pdu_outlet: 2
+    location: lab-site-a
+    
+  - board_id: soc-a-003
+    soc_family: socA
+    board_ip: 10.1.1.103
+    telnet_port: 23
+    pdu_host: pdu-a.lab.local
+    pdu_outlet: 3
+    location: lab-site-a
+    
+  # Lab Site B - SoC Family B boards
+  - board_id: soc-b-001
+    soc_family: socB
+    board_ip: 10.1.2.101
+    telnet_port: 23
+    pdu_host: pdu-b.lab.local
+    pdu_outlet: 1
+    location: lab-site-b
+    
+  - board_id: soc-b-002
+    soc_family: socB
+    board_ip: 10.1.2.102
+    telnet_port: 23
+    pdu_host: pdu-b.lab.local
+    pdu_outlet: 2
+    location: lab-site-b

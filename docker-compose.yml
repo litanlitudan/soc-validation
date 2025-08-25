@@ -1,0 +1,124 @@
+version: '3.9'
+
+services:
+  # Prefect Server - Orchestration Control Plane
+  prefect:
+    build:
+      context: .
+      dockerfile: Dockerfile.prefect
+    container_name: soc-validation-prefect
+    ports:
+      - "${PREFECT_API_PORT:-4200}:4200"
+    environment:
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+      - PREFECT_SERVER_API_PORT=4200
+      - PREFECT_API_DATABASE_CONNECTION_URL=${PREFECT_DATABASE_URL:-sqlite+aiosqlite:////data/prefect.db}
+      - PREFECT_API_URL=http://localhost:${PREFECT_API_PORT:-4200}/api
+      - PREFECT_LOGGING_LEVEL=${PREFECT_LOGGING_LEVEL:-INFO}
+      - PREFECT_LOCAL_STORAGE_PATH=/data/storage
+      - PREFECT_SERVER_ANALYTICS_ENABLED=false
+    volumes:
+      - prefect-data:/data
+      - ./config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - soc-validation-network
+    restart: unless-stopped
+
+  # Device Manager API Service
+  device-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: device-manager
+    container_name: soc-validation-device-manager
+    ports:
+      - "${DEVICE_MANAGER_PORT:-8000}:8000"
+    environment:
+      - DEVICE_MANAGER_HOST=0.0.0.0
+      - DEVICE_MANAGER_PORT=8000
+      - REDIS_URL=redis://redis:6379
+      - PREFECT_API_URL=http://prefect:4200/api
+      - BOARDS_CONFIG_PATH=/app/config/boards.yaml
+      - LOG_LEVEL=${DEVICE_MANAGER_LOG_LEVEL:-INFO}
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - ./data/logs:/app/logs
+    depends_on:
+      - redis
+      - prefect
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - soc-validation-network
+    restart: unless-stopped
+
+  # Notification Service
+  notification:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: notification
+    container_name: soc-validation-notification
+    ports:
+      - "${NOTIFICATION_PORT:-9000}:9000"
+    environment:
+      - NOTIFICATION_HOST=0.0.0.0
+      - NOTIFICATION_PORT=9000
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SLACK_VERIFICATION_TOKEN=${SLACK_VERIFICATION_TOKEN:-}
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL:-}
+      - FEISHU_VERIFICATION_TOKEN=${FEISHU_VERIFICATION_TOKEN:-}
+      - PREFECT_API_URL=http://prefect:4200/api
+      - LOG_LEVEL=${NOTIFICATION_LOG_LEVEL:-INFO}
+    volumes:
+      - ./src:/app/src:ro
+      - ./data/logs:/app/logs
+    depends_on:
+      - prefect
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - soc-validation-network
+    restart: unless-stopped
+
+  # Redis - Distributed Locking and Queue Management
+  redis:
+    image: redis:7.4-alpine
+    container_name: soc-validation-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - soc-validation-network
+    restart: unless-stopped
+
+networks:
+  soc-validation-network:
+    driver: bridge
+    name: soc-validation-network
+
+volumes:
+  prefect-data:
+    driver: local
+  redis-data:
+    driver: local

@@ -1,0 +1,106 @@
+# Distributed Worker Deployment Configuration
+# Deploy this on worker nodes near lab infrastructure
+
+version: '3.9'
+
+services:
+  # Prefect Worker for Distributed Execution
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: soc-validation/worker:${VERSION:-latest}
+    container_name: soc-validation-worker-${WORKER_ID:-1}
+    environment:
+      # Orchestrator Connection
+      - PREFECT_API_URL=http://${ORCHESTRATOR_IP}:${PREFECT_API_PORT:-4200}/api
+      - DEVICE_MANAGER_URL=http://${ORCHESTRATOR_IP}:${DEVICE_MANAGER_PORT:-8000}
+      - NOTIFICATION_SERVICE_URL=http://${ORCHESTRATOR_IP}:${NOTIFICATION_PORT:-9000}
+      - REDIS_URL=redis://${ORCHESTRATOR_IP}:${REDIS_PORT:-6379}
+      
+      # Worker Configuration
+      - WORKER_ID=${WORKER_ID:-worker-1}
+      - WORKER_LOCATION=${WORKER_LOCATION:-lab-site-a}
+      - WORKER_POOL_NAME=${WORKER_POOL_NAME:-default}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-4}
+      - WORKER_HEARTBEAT_INTERVAL=${WORKER_HEARTBEAT_INTERVAL:-30}
+      
+      # Storage Configuration
+      - ARTIFACT_PATH=/data/artifacts
+      - TEST_BINARY_PATH=/data/tests
+      - LOG_PATH=/app/logs
+      
+      # Logging
+      - LOG_LEVEL=${WORKER_LOG_LEVEL:-INFO}
+      - PREFECT_LOGGING_LEVEL=${PREFECT_LOGGING_LEVEL:-INFO}
+      
+      # Board Access Configuration
+      - DEFAULT_TELNET_PORT=${DEFAULT_TELNET_PORT:-23}
+      - DEFAULT_TEST_TIMEOUT=${DEFAULT_TEST_TIMEOUT:-1800}
+      - BOARD_USERNAME=${BOARD_USERNAME:-}
+      - BOARD_PASSWORD=${BOARD_PASSWORD:-}
+    
+    volumes:
+      # Configuration
+      - ./config:/app/config:ro
+      
+      # Local storage for artifacts and tests
+      - ./data/artifacts:/data/artifacts
+      - ./data/tests:/data/tests
+      - ./data/logs:/app/logs
+      
+      # SSH keys for board access (if needed)
+      - ${SSH_KEY_PATH:-~/.ssh}:/root/.ssh:ro
+    
+    # Network configuration
+    network_mode: host  # Use host network for direct board access
+    
+    # Extra hosts for name resolution
+    extra_hosts:
+      - "orchestrator:${ORCHESTRATOR_IP}"
+      - "prefect-server:${ORCHESTRATOR_IP}"
+      - "device-manager:${ORCHESTRATOR_IP}"
+      
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '${WORKER_CPU_LIMIT:-2}'
+          memory: ${WORKER_MEMORY_LIMIT:-1G}
+        reservations:
+          cpus: '${WORKER_CPU_RESERVE:-1}'
+          memory: ${WORKER_MEMORY_RESERVE:-512M}
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Local monitoring agent
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: soc-validation-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+
+# No custom network needed - using host network for direct board access

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Prefect Test Infrastructure MVP is a lightweight, containerized system designed for a 3-month implementation timeline. Following the technical steering architecture, it leverages Prefect Server 3.x, FastAPI, and Redis to provide basic test orchestration for compiler and runtime teams. The design prioritizes simplicity and quick deployment over advanced features, targeting 10-20 boards and 200+ tests/day for 1-2 pilot teams.
+The soc-validation infrastructure is a lightweight, containerized system designed for a 3-month implementation timeline. Following the technical steering architecture, it leverages Prefect Server 3.x, FastAPI, and Redis to provide basic test orchestration for compiler and runtime teams. The design prioritizes simplicity and quick deployment over advanced features, targeting 10-20 boards and 200+ tests/day for 1-2 pilot teams.
 
 ## Steering Document Alignment
 
@@ -12,6 +12,7 @@ The Prefect Test Infrastructure MVP is a lightweight, containerized system desig
 - FastAPI with Pydantic v2 for the Device Manager API
 - Redis 7.4+ for distributed locks and simple queuing
 - Single-server deployment with Docker Compose
+- **Dependency Note:** prometheus-client>=0.20.0 required for Prefect 3.0.0 compatibility
 
 ### Project Structure (structure.md)
 - Follows the defined directory structure with src/, tests/, docs/, and scripts/
@@ -49,7 +50,7 @@ graph TD
     subgraph "Central Orchestrator (Single Server)"
         subgraph "Core Services"
             PS[Prefect Server 3.x]
-            DB[(SQLite/PostgreSQL)]
+            DB[(SQLite with aiosqlite)]
             PS --> DB
         end
 
@@ -198,17 +199,26 @@ graph TD
 ### Prefect Server
 - **Purpose:** Orchestration control plane
 - **Implementation:**
-  - Use existing Prefect Server Docker image
+  - Custom Prefect Server Docker image with aiosqlite support
   - Configure with single work pool for MVP
-  - SQLite for development, PostgreSQL option for production
+  - SQLite with aiosqlite for async database operations
 - **Configuration:**
   ```yaml
   # docker-compose.yml addition
   prefect:
-    image: prefecthq/prefect:3-python3.12
+    build:
+      context: .
+      dockerfile: Dockerfile.prefect
     environment:
       PREFECT_SERVER_API_HOST: 0.0.0.0
-      PREFECT_API_DATABASE_CONNECTION_URL: sqlite:///data/prefect.db
+      PREFECT_API_DATABASE_CONNECTION_URL: sqlite+aiosqlite:////data/prefect.db
+  ```
+- **Custom Dockerfile.prefect:**
+  ```dockerfile
+  FROM prefecthq/prefect:3-python3.12
+  # Install curl for health checks and aiosqlite for async SQLite support
+  RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/* && \
+      pip install --no-cache-dir aiosqlite
   ```
 
 ### Device Manager Service
@@ -590,13 +600,25 @@ deployment_params = {
 version: '3.9'
 services:
   prefect:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.prefect
     ports:
       - "4200:4200"
     volumes:
-      - ./data:/data
+      - prefect-data:/data
+      - ./config:/app/config:ro
     environment:
-      - PREFECT_API_URL=http://${SERVER_IP}:4200/api
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+      - PREFECT_SERVER_API_PORT=4200
+      - PREFECT_API_DATABASE_CONNECTION_URL=sqlite+aiosqlite:////data/prefect.db
+      - PREFECT_API_URL=http://localhost:4200/api
+      - PREFECT_SERVER_ANALYTICS_ENABLED=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - orchestrator-net
 

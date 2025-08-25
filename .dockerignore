@@ -1,0 +1,104 @@
+# Docker Ignore File for SoC Validation Infrastructure
+
+# Version control
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.hypothesis
+.mypy_cache
+.ruff_cache
+
+# Virtual environments
+venv
+env
+ENV
+.venv
+.env.local
+*.env
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+docs/_build
+*.md
+!README.md
+
+# Data and logs (these should be mounted as volumes)
+data/
+logs/
+artifacts/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Test outputs
+test-results/
+test-reports/
+coverage.xml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Docker files (don't include in build context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+jenkins/
+
+# Scripts (only include necessary ones)
+scripts/local/
+scripts/*.log
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+
+# OS files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Project specific
+boards.yaml.local
+config/local/
+backup-*.tar.gz
+
+# Keep only essential files for the build

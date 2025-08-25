@@ -7,15 +7,20 @@
 ```
 soc_validation/
 ├── .env.example                    # Environment variable template
+├── .env.worker.example             # Worker environment template
 ├── .gitignore                      # Git ignore patterns
-├── docker-compose.yml              # Main orchestration file
-├── Dockerfile                      # Prefect server container
+├── docker-compose.yml              # Central orchestrator services
+├── worker-compose.yml              # Distributed worker deployment
+├── Dockerfile                      # Multi-stage build (device-manager, notification)
+├── Dockerfile.worker               # Worker container with hardware tools
 ├── Makefile                        # Common operations
 ├── README.md                       # Project documentation
 │
 ├── data/                           # Persistent data (git-ignored)
-│   ├── prefect.db                  # SQLite database
-│   └── artifacts/                  # Test artifacts storage
+│   ├── prefect/                    # SQLite database
+│   ├── redis/                      # Redis persistence
+│   ├── artifacts/                  # Test artifacts storage
+│   └── logs/                       # Application logs
 │
 ├── src/                            # Source code
 │   ├── __init__.py
@@ -77,13 +82,18 @@ from ..utils.logging import get_logger
 ### Environment Variables (`.env`)
 
 ```bash
+# Central Orchestrator
 PREFECT_API_URL=http://localhost:4200/api
-PREFECT_HOME=/usr/src/server
+PREFECT_DATABASE_URL=sqlite:////data/prefect.db
 DEVICE_MANAGER_URL=http://localhost:8000
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://redis:6379
 SLACK_WEBHOOK_URL=...
 ARTIFACT_PATH=/data/artifacts
-DATABASE_URL=sqlite:///data/prefect.db
+
+# Worker Configuration (`.env.worker`)
+ORCHESTRATOR_IP=10.1.1.100  # Central server IP
+WORKER_ID=worker-1
+WORKER_LOCATION=lab-site-a
 ```
 
 ### Board Configuration (`boards.yaml`)
@@ -92,17 +102,18 @@ DATABASE_URL=sqlite:///data/prefect.db
 boards:
   - board_id: soc-a-001
     soc_family: socA
-    soc_revision: rev2
-    serial_port: /dev/ttyUSB0
+    board_ip: 10.1.1.101
+    telnet_port: 23
+    pdu_host: pdu-a.lab.local
     pdu_outlet: 1
-    host_runner: runner-1
+    location: lab-site-a
 ```
 
 ---
 
 ## Testing Workflow
 
-```
+```bash
 tests/
 ├── unit/           # Fast, isolated tests
 ├── integration/    # Component interaction tests
@@ -138,17 +149,17 @@ Standards:
 
 ## Development Environment
 
-**Required Tools**
+### Required Tools
 
 ```bash
-Python 3.11+
+Python 3.12+
 Docker 24.0+
 Docker Compose v2
 Make
 pytest, ruff, mypy
 ```
 
-**Quick Setup**
+### Quick Setup
 
 ```bash
 cp .env.example .env

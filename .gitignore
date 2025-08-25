@@ -1,0 +1,142 @@
+# SoC Validation Test Infrastructure - Git Ignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.log
+.hypothesis/
+
+# Type Checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Linting
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# Data and Artifacts
+data/
+!data/.gitkeep
+artifacts/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Backups
+*.bak
+*.backup
+backup-*.tar.gz
+
+# Docker
+docker-compose.override.yml
+
+# OS
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# CI/CD
+.github/workflows/local/
+
+# Project specific
+boards.yaml.local
+config/local/
+scripts/local/
+*.pem
+*.key
+*.crt
+*.cert
+
+# Test outputs
+test-results/
+test-reports/
+screenshots/
+
+# Profiling
+*.prof
+*.lprof
+
+# Cache
+.cache/
+cache/
+
+# Lock files (keep for reproducibility)
+# Uncomment if you don't want to track lock files
+# poetry.lock
+# Pipfile.lock
+# package-lock.json
+# yarn.lock
