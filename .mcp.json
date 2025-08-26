@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "spec-workflow": {
-      "command": "spec-workflow-mcp",
-      "args": ["/home/tanl/soc_validation"],
-      "env": {}
-    }
-  }
-}

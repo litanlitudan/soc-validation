@@ -134,6 +134,9 @@ screenshots/
 .cache/
 cache/
 
+# MCP configs
+**/.mcp.json
+
 # Lock files (keep for reproducibility)
 # Uncomment if you don't want to track lock files
 # poetry.lock
