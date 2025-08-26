@@ -115,6 +115,21 @@ install: ## Install Python dependencies
 	pip install -r requirements.txt
 	pre-commit install
 
+.PHONY: install-docker-compose
+install-docker-compose: ## Install Docker Compose v1.29.2
+	@echo "Installing Docker Compose v1.29.2..."
+	@# Remove any older/other Compose installs to avoid confusion
+	@sudo apt-get remove -y docker-compose 2>/dev/null || true
+	@sudo rm -f /usr/local/bin/docker-compose 2>/dev/null || true
+	@# Download the exact v1.29.2 binary
+	@sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$$(uname -s)-$$(uname -m)" \
+		-o /usr/local/bin/docker-compose
+	@# Make it executable
+	@sudo chmod +x /usr/local/bin/docker-compose
+	@# Verify installation
+	@echo "Docker Compose installed successfully:"
+	@docker-compose version
+
 .PHONY: prefect-ui
 prefect-ui: ## Open Prefect UI in browser
 	open http://localhost:4200 || xdg-open http://localhost:4200

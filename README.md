@@ -16,7 +16,8 @@ The **soc-validation** project is a Prefect-based test orchestration platform fo
 
 ### Prerequisites
 
-- Docker and Docker Compose (v3.9+)
+- Docker
+- Docker Compose v1.29.2 (specific version required for compatibility)
 - Python 3.12+
 - Git
 - 4GB RAM minimum
@@ -31,14 +32,22 @@ git clone <repository-url>
 cd soc_validation
 ```
 
-2. Copy environment template:
+2. Install Docker Compose v1.29.2 (if not already installed):
+
+```bash
+make install-docker-compose
+# Or manually check version:
+docker-compose version
+```
+
+3. Copy environment template:
 
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. Build and start the development environment:
+4. Build and start the development environment:
 
 ```bash
 # Build the images
@@ -54,7 +63,7 @@ docker-compose ps
 docker-compose logs -f
 ```
 
-4. Verify services are running:
+5. Verify services are running:
 
 ```bash
 # Check health status
@@ -66,7 +75,7 @@ open http://localhost:8000/docs  # Device Manager API docs
 open http://localhost:9000/docs  # Notification Service API docs
 ```
 
-5. Initialize Prefect work pool (first time only):
+6. Initialize Prefect work pool (first time only):
 
 ```bash
 docker-compose exec prefect prefect work-pool create --type process default
@@ -255,6 +264,7 @@ make shell        # Open shell in Prefect container
 make redis-cli    # Open Redis CLI
 make build        # Rebuild Docker images
 make clean        # Clean up generated files
+make install-docker-compose  # Install Docker Compose v1.29.2
 
 # Testing
 make test         # Run all tests
@@ -444,6 +454,11 @@ docker-compose restart prefect
 
 1. **Services Won't Start**
    ```bash
+   # Check Docker Compose version (must be v1.29.2)
+   docker-compose version
+   # If wrong version, install correct one:
+   make install-docker-compose
+   
    # Check for port conflicts
    netstat -tulpn | grep -E '4200|8000|9000|6379'
    
