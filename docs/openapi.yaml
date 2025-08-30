@@ -1,0 +1,804 @@
+openapi: 3.0.3
+info:
+  title: SoC Validation Device Manager API
+  description: |
+    API for managing SoC board allocation, leasing, and control in the validation infrastructure.
+    This API provides endpoints for board management, test submission, and health monitoring.
+  version: 0.1.0
+  contact:
+    name: SoC Validation Team
+    email: soc-validation@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://{host}:8000
+    description: Production server
+    variables:
+      host:
+        default: orchestrator
+        description: Orchestrator hostname or IP address
+
+tags:
+  - name: boards
+    description: Board management operations
+  - name: leases
+    description: Board lease operations
+  - name: tests
+    description: Test submission and results
+  - name: power
+    description: Board power control
+  - name: health
+    description: Service health checks
+  - name: webhooks
+    description: External integration webhooks
+
+paths:
+  /api/v1/boards:
+    get:
+      tags:
+        - boards
+      summary: List available boards
+      description: Returns a list of all boards with their current status and availability
+      operationId: listBoards
+      parameters:
+        - name: soc_family
+          in: query
+          description: Filter by SoC family
+          required: false
+          schema:
+            type: string
+            example: socA
+        - name: status
+          in: query
+          description: Filter by health status
+          required: false
+          schema:
+            type: string
+            enum: [healthy, unhealthy]
+        - name: available
+          in: query
+          description: Filter by availability
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  boards:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Board'
+                  total:
+                    type: integer
+                    description: Total number of boards
+                  available:
+                    type: integer
+                    description: Number of available boards
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/boards/{board_id}:
+    get:
+      tags:
+        - boards
+      summary: Get board details
+      description: Returns detailed information about a specific board
+      operationId: getBoard
+      parameters:
+        - name: board_id
+          in: path
+          description: Board identifier
+          required: true
+          schema:
+            type: string
+            example: soc-a-001
+      responses:
+        '200':
+          description: Board details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/lease:
+    post:
+      tags:
+        - leases
+      summary: Request a board lease
+      description: Requests exclusive access to a board from the specified family
+      operationId: createLease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaseRequest'
+      responses:
+        '201':
+          description: Lease created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lease'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: No boards available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "No boards available for family socA"
+                retry_after: 30
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/lease/{lease_id}:
+    get:
+      tags:
+        - leases
+      summary: Get lease details
+      description: Returns information about a specific lease
+      operationId: getLease
+      parameters:
+        - name: lease_id
+          in: path
+          description: Lease identifier
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: lease-123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Lease details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lease'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - leases
+      summary: Release a board lease
+      description: Releases exclusive access to a board
+      operationId: releaseLease
+      parameters:
+        - name: lease_id
+          in: path
+          description: Lease identifier
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: lease-123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '204':
+          description: Lease released successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/power/{board_id}/{action}:
+    post:
+      tags:
+        - power
+      summary: Control board power
+      description: Performs power control operations on a board
+      operationId: powerControl
+      parameters:
+        - name: board_id
+          in: path
+          description: Board identifier
+          required: true
+          schema:
+            type: string
+            example: soc-a-001
+        - name: action
+          in: path
+          description: Power action to perform
+          required: true
+          schema:
+            type: string
+            enum: [on, off, cycle]
+      responses:
+        '200':
+          description: Power action completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  board_id:
+                    type: string
+                  action:
+                    type: string
+                  status:
+                    type: string
+                    enum: [success, failed]
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/tests:
+    post:
+      tags:
+        - tests
+      summary: Submit a test
+      description: Submits a test for execution on a board
+      operationId: submitTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestSubmission'
+      responses:
+        '202':
+          description: Test accepted for execution
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow_run_id:
+                    type: string
+                    description: Prefect flow run identifier
+                  queue_position:
+                    type: integer
+                    description: Position in queue
+                  estimated_wait:
+                    type: integer
+                    description: Estimated wait time in seconds
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: Queue full
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Queue is full (50 tests). Please try again later."
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - tests
+      summary: List test results
+      description: Returns the most recent test results
+      operationId: listTestResults
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of results to return
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of results to skip
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Test results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestResult'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/tests/{flow_run_id}:
+    get:
+      tags:
+        - tests
+      summary: Get test result
+      description: Returns the result of a specific test execution
+      operationId: getTestResult
+      parameters:
+        - name: flow_run_id
+          in: path
+          description: Prefect flow run identifier
+          required: true
+          schema:
+            type: string
+            example: flow-run-123
+      responses:
+        '200':
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/health:
+    get:
+      tags:
+        - health
+      summary: Service health check
+      description: Returns the health status of the Device Manager service
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  services:
+                    type: object
+                    properties:
+                      redis:
+                        type: boolean
+                      prefect:
+                        type: boolean
+                  timestamp:
+                    type: string
+                    format: date-time
+        '503':
+          description: Service unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/slack:
+    post:
+      tags:
+        - webhooks
+      summary: Slack webhook handler
+      description: Handles Slack slash commands and event callbacks
+      operationId: slackWebhook
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Verification token
+                command:
+                  type: string
+                  description: Slash command
+                text:
+                  type: string
+                  description: Command text
+                user_id:
+                  type: string
+                  description: Slack user ID
+                channel_id:
+                  type: string
+                  description: Slack channel ID
+      responses:
+        '200':
+          description: Command processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+                    description: Response message
+                  response_type:
+                    type: string
+                    enum: [ephemeral, in_channel]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /webhooks/feishu:
+    post:
+      tags:
+        - webhooks
+      summary: Feishu webhook handler
+      description: Handles Feishu bot commands and event callbacks
+      operationId: feishuWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                challenge:
+                  type: string
+                  description: Challenge for verification
+                token:
+                  type: string
+                  description: Verification token
+                type:
+                  type: string
+                  description: Event type
+                event:
+                  type: object
+                  description: Event payload
+      responses:
+        '200':
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge:
+                    type: string
+                    description: Challenge response for verification
+                  message:
+                    type: string
+                    description: Response message
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /webhooks/jenkins:
+    post:
+      tags:
+        - webhooks
+      summary: Jenkins webhook handler
+      description: Handles Jenkins CI webhooks for automated test submission
+      operationId: jenkinsWebhook
+      parameters:
+        - name: X-Jenkins-Token
+          in: header
+          description: Jenkins webhook token
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_name:
+                  type: string
+                  description: Jenkins job name
+                build_number:
+                  type: integer
+                  description: Build number
+                test_binary:
+                  type: string
+                  description: Path to test binary
+                board_family:
+                  type: string
+                  description: Target board family
+                priority:
+                  type: integer
+                  description: Test priority
+                callback_url:
+                  type: string
+                  format: uri
+                  description: URL for result callback
+      responses:
+        '202':
+          description: Test submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow_run_id:
+                    type: string
+                    description: Prefect flow run ID
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  schemas:
+    Board:
+      type: object
+      required:
+        - board_id
+        - soc_family
+        - board_ip
+      properties:
+        board_id:
+          type: string
+          description: Unique board identifier
+          example: soc-a-001
+        soc_family:
+          type: string
+          description: SoC family
+          example: socA
+        board_ip:
+          type: string
+          format: ipv4
+          description: Board IP address for telnet access
+          example: 10.1.1.101
+        telnet_port:
+          type: integer
+          default: 23
+          description: Telnet port
+        pdu_host:
+          type: string
+          nullable: true
+          description: PDU hostname for power control
+          example: pdu-a.lab.local
+        pdu_outlet:
+          type: integer
+          nullable: true
+          description: PDU outlet number
+          example: 1
+        location:
+          type: string
+          description: Physical lab location
+          default: unknown
+          example: lab-site-a
+        health_status:
+          type: string
+          enum: [healthy, unhealthy]
+          default: healthy
+          description: Board health status
+        failure_count:
+          type: integer
+          default: 0
+          description: Number of failures
+        last_used:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last usage timestamp
+
+    LeaseRequest:
+      type: object
+      required:
+        - board_family
+      properties:
+        board_family:
+          type: string
+          description: Target SoC family
+          example: socA
+        timeout:
+          type: integer
+          default: 1800
+          minimum: 60
+          maximum: 7200
+          description: Lease timeout in seconds (1 min to 2 hours)
+        priority:
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 3
+          description: Priority level (1=high, 2=normal, 3=low)
+
+    Lease:
+      type: object
+      required:
+        - lease_id
+        - board_id
+        - acquired_at
+        - expires_at
+      properties:
+        lease_id:
+          type: string
+          format: uuid
+          description: Unique lease identifier
+          example: lease-123e4567-e89b-12d3-a456-426614174000
+        board_id:
+          type: string
+          description: Leased board ID
+          example: soc-a-001
+        flow_run_id:
+          type: string
+          nullable: true
+          description: Associated Prefect flow run ID
+          example: flow-run-123
+        acquired_at:
+          type: string
+          format: date-time
+          description: Lease acquisition time
+        expires_at:
+          type: string
+          format: date-time
+          description: Lease expiration time
+        status:
+          type: string
+          enum: [active, expired, released]
+          default: active
+          description: Lease status
+
+    TestSubmission:
+      type: object
+      required:
+        - test_binary
+        - board_family
+      properties:
+        test_binary:
+          type: string
+          description: Path to test binary
+          example: /path/to/test
+        board_family:
+          type: string
+          description: Target board family
+          example: socA
+        priority:
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 3
+          description: Test priority (1=high, 2=normal, 3=low)
+        timeout:
+          type: integer
+          default: 1800
+          minimum: 60
+          maximum: 3600
+          description: Test timeout in seconds (1 min to 1 hour)
+
+    TestResult:
+      type: object
+      required:
+        - result_id
+        - flow_run_id
+        - board_id
+        - test_binary
+        - started_at
+        - status
+      properties:
+        result_id:
+          type: string
+          format: uuid
+          description: Unique result identifier
+          example: result-123e4567-e89b-12d3-a456-426614174000
+        flow_run_id:
+          type: string
+          description: Prefect flow run ID
+          example: flow-run-123
+        board_id:
+          type: string
+          description: Board used for test
+          example: soc-a-001
+        test_binary:
+          type: string
+          description: Test binary path
+          example: /path/to/test
+        started_at:
+          type: string
+          format: date-time
+          description: Test start time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Test completion time
+        status:
+          type: string
+          enum: [running, passed, failed, timeout]
+          description: Test status
+        output_file:
+          type: string
+          nullable: true
+          description: Path to output file
+          example: /data/artifacts/result-123/output.log
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if failed
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+        details:
+          type: object
+          nullable: true
+          description: Additional error details
+        retry_after:
+          type: integer
+          nullable: true
+          description: Suggested retry delay in seconds
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Invalid request parameters"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Invalid or missing authentication token"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Resource not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"
+            details:
+              message: "Database connection failed"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT authentication (future enhancement)
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key authentication (future enhancement)
+
+security: []  # No authentication for MVP

@@ -19,7 +19,7 @@ This document provides a comprehensive implementation plan for the soc-validatio
   - Run Prefect Server 3.x in Docker with basic configuration
   - Files: docker-compose.yml, Makefile
   - _Requirements: 1_
-- [ ] 4. Define API contracts early
+- [x] 4. Define API contracts early
   - Create OpenAPI spec for device manager API
   - Files: docs/openapi.yaml, src/device_manager/models.py
   - _Requirements: 1, 6_
