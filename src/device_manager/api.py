@@ -3,21 +3,26 @@
 import os
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from pydantic import BaseModel
-import redis
 import logging
 import json
 
 from .models import Board, Lease, LeaseRequest, TestSubmission
 from .config import load_boards_config, get_board_by_family, get_board_by_id
+from .redis_client import get_redis_client, initialize_redis, cleanup_redis
+from .lock_manager import DistributedLockManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+# Global instances
+lock_manager: Optional[DistributedLockManager] = None
+boards_config = None
 
 # Lifespan context manager for startup and shutdown
 @asynccontextmanager
@@ -25,17 +30,26 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     logger.info("Device Manager starting up...")
+    
+    # Load board configuration
     global boards_config
     boards_config = load_boards_config(os.getenv("BOARDS_CONFIG_PATH", "/app/config/boards.yaml"))
     logger.info(f"Loaded {len(boards_config.boards)} boards from configuration")
     
-    # Test Redis connection
+    # Initialize Redis connection and lock manager
     try:
-        r = get_redis_client()
-        r.ping()
-        logger.info("Redis connection established")
+        redis_client = await initialize_redis()
+        global lock_manager
+        lock_manager = DistributedLockManager(
+            redis_client=redis_client,
+            default_timeout=1800,  # 30 minutes default timeout
+            blocking_timeout=30,    # Wait up to 30 seconds for lock
+            retry_interval=0.5      # Check every 500ms when blocking
+        )
+        logger.info("Redis connection and lock manager initialized")
     except Exception as e:
-        logger.error(f"Failed to connect to Redis: {e}")
+        logger.error(f"Failed to initialize Redis: {e}")
+        raise
     
     yield
     
@@ -43,9 +57,7 @@ async def lifespan(app: FastAPI):
     logger.info("Device Manager shutting down...")
     
     # Clean up Redis connection
-    global redis_client
-    if redis_client:
-        redis_client.close()
+    await cleanup_redis()
 
 
 # Create FastAPI app
@@ -55,20 +67,6 @@ app = FastAPI(
     description="Device management and board allocation service",
     lifespan=lifespan
 )
-
-# Redis client
-redis_client = None
-
-# Board configuration (initialized in lifespan)
-boards_config = None
-
-def get_redis_client():
-    """Get Redis client instance."""
-    global redis_client
-    if redis_client is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_client = redis.from_url(redis_url, decode_responses=True)
-    return redis_client
 
 
 class HealthResponse(BaseModel):
@@ -99,8 +97,9 @@ async def health_check():
     # Check Redis connection
     redis_connected = False
     try:
-        r = get_redis_client()
-        r.ping()
+        redis_client = get_redis_client()
+        client = await redis_client.get_client()
+        await client.ping()
         redis_connected = True
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
@@ -133,61 +132,75 @@ async def get_board(board_id: str):
 @app.post("/api/v1/lease", response_model=LeaseResponse)
 async def acquire_lease(request: LeaseRequest):
     """Acquire a board lease."""
-    r = get_redis_client()
+    if not lock_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lock manager not initialized"
+        )
     
     # Find available board of the requested family
-    board = get_board_by_family(boards_config, request.board_family)
-    if not board:
+    available_boards = [b for b in boards_config.boards if b.board_family == request.board_family]
+    if not available_boards:
         raise HTTPException(
-            status_code=404, 
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No boards found for family {request.board_family}"
+        )
+    
+    # Try to acquire a lock on any available board
+    lease_id = str(uuid.uuid4())
+    board_acquired = None
+    lock_token = None
+    
+    for board in available_boards:
+        # Check if board is healthy
+        if board.health_status != "healthy":
+            logger.debug(f"Skipping unhealthy board {board.board_id}")
+            continue
+        
+        # Try to acquire lock on this board
+        lock_token = await lock_manager.acquire_lock(
+            resource_id=board.board_id,
+            timeout=request.timeout,
+            blocking=False  # Don't block, try next board
+        )
+        
+        if lock_token:
+            board_acquired = board
+            break
+    
+    if not board_acquired or not lock_token:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=f"No available boards for family {request.board_family}"
         )
     
-    # Try to acquire lock using Redis SET NX
-    lease_id = str(uuid.uuid4())
-    lock_key = f"board_lock:{board.board_id}"
-    lease_key = f"lease:{lease_id}"
-    
-    # Check if board is already locked
-    if r.exists(lock_key):
-        # Board is already in use
-        raise HTTPException(
-            status_code=409,
-            detail=f"Board {board.board_id} is already in use"
-        )
-    
-    # Try to acquire the lock
+    # Store lease information in Redis
     expires_at = datetime.now() + timedelta(seconds=request.timeout)
     lease_data = {
         "lease_id": lease_id,
-        "board_id": board.board_id,
+        "board_id": board_acquired.board_id,
+        "lock_token": lock_token,
         "acquired_at": datetime.now().isoformat(),
         "expires_at": expires_at.isoformat(),
         "priority": request.priority
     }
     
-    # Set lock with expiration
-    lock_acquired = r.set(lock_key, lease_id, nx=True, ex=request.timeout)
-    
-    if not lock_acquired:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Failed to acquire lock for board {board.board_id}"
-        )
-    
-    # Store lease information
-    r.set(lease_key, json.dumps(lease_data), ex=request.timeout)
+    # Store lease data
+    redis_client = get_redis_client()
+    client = await redis_client.get_client()
+    lease_key = f"lease:{lease_id}"
+    await client.set(lease_key, json.dumps(lease_data), ex=request.timeout)
     
     # Update board last used time
-    board.last_used = datetime.now()
+    board_acquired.last_used = datetime.now()
     
-    logger.info(f"Lease {lease_id} acquired for board {board.board_id}")
+    logger.info(f"Lease {lease_id} acquired for board {board_acquired.board_id}")
     
     return LeaseResponse(
         lease_id=lease_id,
-        board_id=board.board_id,
-        board_ip=board.board_ip,
-        telnet_port=board.telnet_port,
+        board_id=board_acquired.board_id,
+        board_ip=board_acquired.board_ip,
+        telnet_port=board_acquired.telnet_port,
         expires_at=expires_at
     )
 
@@ -195,21 +208,36 @@ async def acquire_lease(request: LeaseRequest):
 @app.delete("/api/v1/lease/{lease_id}")
 async def release_lease(lease_id: str):
     """Release a board lease."""
-    r = get_redis_client()
+    if not lock_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lock manager not initialized"
+        )
     
+    # Get lease information
+    redis_client = get_redis_client()
+    client = await redis_client.get_client()
     lease_key = f"lease:{lease_id}"
-    lease_data = r.get(lease_key)
+    lease_data = await client.get(lease_key)
     
     if not lease_data:
-        raise HTTPException(status_code=404, detail=f"Lease {lease_id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lease {lease_id} not found"
+        )
     
     lease = json.loads(lease_data)
     board_id = lease["board_id"]
-    lock_key = f"board_lock:{board_id}"
+    lock_token = lease.get("lock_token")
     
-    # Delete the lock and lease
-    r.delete(lock_key)
-    r.delete(lease_key)
+    # Release the lock using the lock manager
+    if lock_token:
+        released = await lock_manager.release_lock(board_id, lock_token)
+        if not released:
+            logger.warning(f"Failed to release lock for board {board_id} with token {lock_token}")
+    
+    # Delete the lease information
+    await client.delete(lease_key)
     
     logger.info(f"Lease {lease_id} released for board {board_id}")
     
@@ -267,6 +295,94 @@ async def get_queue_status():
         "queue_size": 0,
         "estimated_wait_time": 0,
         "active_tests": 0
+    }
+
+
+@app.get("/api/v1/boards/{board_id}/lock-status")
+async def get_board_lock_status(board_id: str):
+    """Get lock status for a specific board."""
+    if not lock_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lock manager not initialized"
+        )
+    
+    # Check if board exists
+    board = get_board_by_id(boards_config, board_id)
+    if not board:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Board {board_id} not found"
+        )
+    
+    # Get lock information
+    lock_info = await lock_manager.get_lock_info(board_id)
+    
+    if lock_info:
+        return {
+            "board_id": board_id,
+            "is_locked": True,
+            "lock_token": lock_info["token"],
+            "ttl_seconds": lock_info["ttl"],
+            "is_owner": lock_info["is_owner"]
+        }
+    else:
+        return {
+            "board_id": board_id,
+            "is_locked": False,
+            "lock_token": None,
+            "ttl_seconds": 0,
+            "is_owner": False
+        }
+
+
+@app.post("/api/v1/lease/{lease_id}/extend")
+async def extend_lease(lease_id: str, additional_time: int = 1800):
+    """Extend an existing board lease."""
+    if not lock_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lock manager not initialized"
+        )
+    
+    # Get lease information
+    redis_client = get_redis_client()
+    client = await redis_client.get_client()
+    lease_key = f"lease:{lease_id}"
+    lease_data = await client.get(lease_key)
+    
+    if not lease_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lease {lease_id} not found"
+        )
+    
+    lease = json.loads(lease_data)
+    board_id = lease["board_id"]
+    lock_token = lease.get("lock_token")
+    
+    # Extend the lock
+    if lock_token:
+        extended = await lock_manager.extend_lock(board_id, lock_token, additional_time)
+        if not extended:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Failed to extend lock for board {board_id}"
+            )
+    
+    # Update lease expiration
+    new_expires = datetime.now() + timedelta(seconds=additional_time)
+    lease["expires_at"] = new_expires.isoformat()
+    await client.set(lease_key, json.dumps(lease), ex=additional_time)
+    
+    logger.info(f"Lease {lease_id} extended for board {board_id} by {additional_time} seconds")
+    
+    return {
+        "status": "extended",
+        "lease_id": lease_id,
+        "board_id": board_id,
+        "new_expires_at": new_expires,
+        "additional_seconds": additional_time
     }
 
 

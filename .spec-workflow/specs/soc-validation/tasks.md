@@ -29,7 +29,7 @@ This document provides a comprehensive implementation plan for the soc-validatio
   - Create device manager API skeleton with health endpoints
   - Files: src/device_manager/api.py, src/device_manager/__init__.py
   - _Requirements: 2, 6_
-- [ ] 6. Set up Redis for distributed locking
+- [x] 6. Set up Redis for distributed locking
   - Deploy Redis 7.4+ and implement lock manager
   - Files: src/device_manager/lock_manager.py, docker-compose.yml
   - _Requirements: 2, 3_
