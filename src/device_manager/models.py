@@ -12,8 +12,6 @@ class Board(BaseModel):
     soc_family: str = Field(..., description="SoC family (e.g., socA, socB)")
     board_ip: str = Field(..., description="Board IP address")
     telnet_port: int = Field(default=23, description="Telnet port")
-    pdu_host: Optional[str] = Field(None, description="PDU hostname")
-    pdu_outlet: Optional[int] = Field(None, description="PDU outlet number")
     location: str = Field(default="unknown", description="Physical location")
     health_status: str = Field(default="healthy", description="Board health status")
     failure_count: int = Field(default=0, description="Failure count")
@@ -26,8 +24,6 @@ class Board(BaseModel):
                 "soc_family": "socA",
                 "board_ip": "10.1.1.101",
                 "telnet_port": 23,
-                "pdu_host": "pdu-a.lab.local",
-                "pdu_outlet": 1,
                 "location": "lab-site-a"
             }
         }
@@ -57,9 +53,13 @@ class Lease(BaseModel):
     
     lease_id: str = Field(..., description="Unique lease identifier")
     board_id: str = Field(..., description="Leased board ID")
+    board_ip: str = Field(..., description="Board IP address")
+    telnet_port: int = Field(default=23, description="Telnet port")
+    lock_token: str = Field(..., description="Redis lock token")
     flow_run_id: Optional[str] = Field(None, description="Prefect flow run ID")
     acquired_at: datetime = Field(..., description="Lease acquisition time")
     expires_at: datetime = Field(..., description="Lease expiration time")
+    priority: int = Field(default=2, ge=1, le=3, description="Priority level")
     status: str = Field(default="active", description="Lease status")
     
     model_config = ConfigDict(
@@ -67,9 +67,13 @@ class Lease(BaseModel):
             "example": {
                 "lease_id": "lease-123e4567-e89b-12d3-a456-426614174000",
                 "board_id": "soc-a-001",
+                "board_ip": "10.1.1.101",
+                "telnet_port": 23,
+                "lock_token": "token-abc123",
                 "flow_run_id": "flow-run-123",
                 "acquired_at": "2024-01-01T00:00:00Z",
                 "expires_at": "2024-01-01T00:30:00Z",
+                "priority": 2,
                 "status": "active"
             }
         }

@@ -1,5 +1,6 @@
 # Example boards configuration for SoC Validation Infrastructure
 # This file defines the available boards for test execution
+# Boards are manually maintained and power-cycled
 
 boards:
   # Lab Site A boards - Direct telnet endpoints
@@ -7,8 +8,6 @@ boards:
     soc_family: socA
     board_ip: 10.1.1.101
     telnet_port: 23
-    pdu_host: pdu-a.lab.local
-    pdu_outlet: 1
     location: lab-site-a
     health_status: healthy
 
@@ -16,8 +15,6 @@ boards:
     soc_family: socA
     board_ip: 10.1.1.102
     telnet_port: 23
-    pdu_host: pdu-a.lab.local
-    pdu_outlet: 2
     location: lab-site-a
     health_status: healthy
 
@@ -25,8 +22,6 @@ boards:
     soc_family: socA
     board_ip: 10.1.1.103
     telnet_port: 23
-    pdu_host: pdu-a.lab.local
-    pdu_outlet: 3
     location: lab-site-a
     health_status: healthy
 
@@ -35,8 +30,6 @@ boards:
     soc_family: socB
     board_ip: 10.1.2.101
     telnet_port: 23
-    pdu_host: pdu-b.lab.local
-    pdu_outlet: 1
     location: lab-site-b
     health_status: healthy
 
@@ -44,8 +37,6 @@ boards:
     soc_family: socB
     board_ip: 10.1.2.102
     telnet_port: 23
-    pdu_host: pdu-b.lab.local
-    pdu_outlet: 2
     location: lab-site-b
     health_status: healthy
 
@@ -54,8 +45,6 @@ boards:
     soc_family: socC
     board_ip: 10.1.3.101
     telnet_port: 23
-    pdu_host: pdu-c.lab.local
-    pdu_outlet: 1
     location: lab-site-c
     health_status: healthy
 
@@ -63,8 +52,6 @@ boards:
     soc_family: socC
     board_ip: 10.1.3.102
     telnet_port: 23
-    pdu_host: pdu-c.lab.local
-    pdu_outlet: 2
     location: lab-site-c
     health_status: healthy
     
@@ -72,7 +59,5 @@ boards:
     soc_family: socC
     board_ip: 10.1.3.103
     telnet_port: 23
-    pdu_host: pdu-c.lab.local
-    pdu_outlet: 3
     location: lab-site-c
     health_status: healthy

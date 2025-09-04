@@ -39,26 +39,11 @@ class BoardsConfig(BaseModel):
         if duplicate_endpoints:
             issues["warnings"].append(f"Duplicate endpoints (IP:port) found: {set(duplicate_endpoints)}")
         
-        # Check for PDU conflicts
-        pdu_outlets = defaultdict(list)
-        for board in self.boards:
-            if board.pdu_host and board.pdu_outlet:
-                key = (board.pdu_host, board.pdu_outlet)
-                pdu_outlets[key].append(board.board_id)
-        
-        for (pdu, outlet), boards in pdu_outlets.items():
-            if len(boards) > 1:
-                issues["errors"].append(f"PDU conflict: {boards} share {pdu} outlet {outlet}")
-        
         # Validate each board
         for board in self.boards:
             # Check for missing critical fields
             if not board.board_ip:
                 issues["errors"].append(f"Board {board.board_id} missing IP address")
-            
-            # Warn about missing PDU config
-            if not board.pdu_host or not board.pdu_outlet:
-                issues["warnings"].append(f"Board {board.board_id} missing PDU configuration")
         
         return issues
     

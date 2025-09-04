@@ -29,8 +29,6 @@ def sample_boards_data():
                 "soc_family": "socA",
                 "board_ip": "10.1.1.101",
                 "telnet_port": 23,
-                "pdu_host": "pdu-a.lab.local",
-                "pdu_outlet": 1,
                 "location": "lab-site-a",
                 "health_status": "healthy"
             },
@@ -39,8 +37,6 @@ def sample_boards_data():
                 "soc_family": "socA",
                 "board_ip": "10.1.1.102",
                 "telnet_port": 23,
-                "pdu_host": "pdu-a.lab.local",
-                "pdu_outlet": 2,
                 "location": "lab-site-a",
                 "health_status": "healthy"
             },
@@ -49,8 +45,6 @@ def sample_boards_data():
                 "soc_family": "socB",
                 "board_ip": "10.1.2.101",
                 "telnet_port": 23,
-                "pdu_host": "pdu-b.lab.local",
-                "pdu_outlet": 1,
                 "location": "lab-site-b",
                 "health_status": "degraded"
             },
@@ -148,10 +142,9 @@ class TestBoardsConfig:
     def test_validate_config_no_issues(self, sample_config):
         """Test validation with no issues."""
         issues = sample_config.validate_config()
-        # One board missing PDU config should generate warning
         assert len(issues["errors"]) == 0
-        assert len(issues["warnings"]) == 1
-        assert "soc-c-001" in issues["warnings"][0]
+        # No warnings expected after removing PDU validation
+        assert len(issues["warnings"]) == 0
     
     def test_validate_config_duplicate_board_id(self):
         """Test validation with duplicate board IDs."""
@@ -177,29 +170,6 @@ class TestBoardsConfig:
         assert len(issues["warnings"]) > 0
         assert any("Duplicate endpoints" in w for w in issues["warnings"])
     
-    def test_validate_config_pdu_conflict(self):
-        """Test validation with PDU outlet conflicts."""
-        boards = [
-            Board(
-                board_id="soc-001",
-                soc_family="socA",
-                board_ip="10.1.1.1",
-                pdu_host="pdu-a",
-                pdu_outlet=1
-            ),
-            Board(
-                board_id="soc-002",
-                soc_family="socB",
-                board_ip="10.1.1.2",
-                pdu_host="pdu-a",
-                pdu_outlet=1
-            )
-        ]
-        config = BoardsConfig(boards=boards)
-        issues = config.validate_config()
-        
-        assert len(issues["errors"]) == 1
-        assert "PDU conflict" in issues["errors"][0]
 
 
 class TestLoadBoardsConfig:
@@ -241,22 +211,18 @@ class TestLoadBoardsConfig:
             Path(temp_path).unlink(missing_ok=True)
     
     def test_load_with_validation_errors(self):
-        """Test loading with validation errors."""
+        """Test loading with validation errors (duplicate board IDs)."""
         data = {
             "boards": [
                 {
                     "board_id": "soc-001",
                     "soc_family": "socA",
-                    "board_ip": "10.1.1.1",
-                    "pdu_host": "pdu-a",
-                    "pdu_outlet": 1
+                    "board_ip": "10.1.1.1"
                 },
                 {
-                    "board_id": "soc-002",
+                    "board_id": "soc-001",  # Duplicate ID
                     "soc_family": "socB",
-                    "board_ip": "10.1.1.2",
-                    "pdu_host": "pdu-a",
-                    "pdu_outlet": 1  # Conflict
+                    "board_ip": "10.1.1.2"
                 }
             ]
         }
