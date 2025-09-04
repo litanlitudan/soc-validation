@@ -33,7 +33,7 @@ This document provides a comprehensive implementation plan for the soc-validatio
   - Deploy Redis 7.4+ and implement lock manager
   - Files: src/device_manager/lock_manager.py, docker-compose.yml
   - _Requirements: 2, 3_
-- [ ] 7. Create board configuration system
+- [x] 7. Create board configuration system
   - YAML-based board inventory management
   - Files: config/boards.yaml, src/device_manager/config.py
   - _Requirements: 2, 3_
