@@ -98,12 +98,6 @@ graph TD
             BoardA3[Board soc-a-003<br/>10.1.1.103:23]
             BoardA4[Board soc-a-004<br/>10.1.1.104:23]
             BoardA5[Board soc-a-005<br/>10.1.1.105:23]
-            PDUA[PDU A]
-            PDUA --> BoardA1
-            PDUA --> BoardA2
-            PDUA --> BoardA3
-            PDUA --> BoardA4
-            PDUA --> BoardA5
         end
 
         subgraph "Lab Site B"
@@ -112,12 +106,6 @@ graph TD
             BoardB3[Board soc-b-003<br/>10.1.2.103:23]
             BoardB4[Board soc-b-004<br/>10.1.2.104:23]
             BoardB5[Board soc-b-005<br/>10.1.2.105:23]
-            PDUB[PDU B]
-            PDUB --> BoardB1
-            PDUB --> BoardB2
-            PDUB --> BoardB3
-            PDUB --> BoardB4
-            PDUB --> BoardB5
         end
 
         subgraph "Lab Site C"
@@ -131,17 +119,6 @@ graph TD
             BoardC8[Board soc-c-008<br/>10.1.3.108:23]
             BoardC9[Board soc-c-009<br/>10.1.3.109:23]
             BoardC10[Board soc-c-010<br/>10.1.3.110:23]
-            PDUC[PDU C]
-            PDUC --> BoardC1
-            PDUC --> BoardC2
-            PDUC --> BoardC3
-            PDUC --> BoardC4
-            PDUC --> BoardC5
-            PDUC --> BoardC6
-            PDUC --> BoardC7
-            PDUC --> BoardC8
-            PDUC --> BoardC9
-            PDUC --> BoardC10
         end
     end
 
@@ -179,11 +156,6 @@ graph TD
     TelnetC -."Telnet:23".-> BoardC8
     TelnetC -."Telnet:23".-> BoardC9
     TelnetC -."Telnet:23".-> BoardC10
-
-    %% Device Manager to PDUs
-    DM -."HTTP/SNMP".-> PDUA
-    DM -."HTTP/SNMP".-> PDUB
-    DM -."HTTP/SNMP".-> PDUC
 
     %% External connections
     NS --> Slack
@@ -230,7 +202,6 @@ graph TD
   DELETE /api/v1/lease/{lease_id}  # Release a board
   GET /api/v1/boards     # List available boards
   GET /api/v1/health     # Service health check
-  POST /api/v1/power/{board_id}/{action}  # Power control
 
   # Webhook endpoints for external triggers
   POST /webhooks/slack    # Slack command webhooks
@@ -416,66 +387,54 @@ graph TD
 - **Implementation:**
   ```python
   # src/device_manager/drivers/telnet_driver.py
-  import telnetlib
   import asyncio
   from typing import Optional
+  from asyncio import StreamReader, StreamWriter
 
   class TelnetDriver:
-      def __init__(self, board_ip: str, port: int = 23, username: Optional[str] = None, password: Optional[str] = None):
-          self.board_ip = board_ip
-          self.port = port
-          self.username = username
-          self.password = password
+      def __init__(self, config: TelnetConfig):
+          """Initialize with telnet configuration."""
+          self.config = config
+          self.reader: Optional[StreamReader] = None
+          self.writer: Optional[StreamWriter] = None
+          self.state = ConnectionState.DISCONNECTED
+
+      async def connect(self) -> None:
+          """Establish telnet connection with retry logic."""
+          # Implementation with retry logic and state management
+          for attempt in range(self.config.retry_count):
+              try:
+                  self.reader, self.writer = await asyncio.wait_for(
+                      asyncio.open_connection(self.config.host, self.config.port),
+                      timeout=self.config.connect_timeout
+                  )
+                  # Handle login if required
+                  if self.config.username:
+                      await self._login()
+                  return
+              except Exception as e:
+                  if attempt < self.config.retry_count - 1:
+                      await asyncio.sleep(self.config.retry_delay)
 
       async def execute_command(self, command: str, timeout: int = 30) -> str:
           """Execute command via direct telnet to SoC board."""
-          try:
-              # Direct connection to board's telnet endpoint
-              tn = telnetlib.Telnet(self.board_ip, self.port, timeout=timeout)
+          if self.state not in [ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED]:
+              raise TelnetConnectionError("Not connected")
+          
+          # Send command and capture output
+          await self._write(command + "\n")
+          output = await self._read_until_prompt(timeout)
+          return output
 
-              # Login if required
-              if self.username:
-                  tn.read_until(b"login: ", timeout=5)
-                  tn.write(f"{self.username}\n".encode())
-                  if self.password:
-                      tn.read_until(b"Password: ", timeout=5)
-                      tn.write(f"{self.password}\n".encode())
-
-              # Wait for prompt and execute command
-              tn.read_until(b"# ", timeout=5)
-              tn.write(f"{command}\n".encode())
-
-              # Read output until next prompt
-              output = tn.read_until(b"# ", timeout=timeout).decode()
-              tn.close()
-              return output
-          except Exception as e:
-              raise ConnectionError(f"Telnet to {self.board_ip}:{self.port} failed: {e}")
-
-  # src/device_manager/drivers/power.py
-  import httpx
-
-  class RemotePowerDriver:
-      """Control remote PDUs via HTTP or SNMP."""
-      def __init__(self, pdu_host: str, pdu_type: str = "apc"):
-          self.pdu_host = pdu_host
-          self.pdu_type = pdu_type
-
-      async def power_cycle(self, outlet: int):
-          """Power cycle via PDU API."""
-          if self.pdu_type == "apc":
-              # APC PDU HTTP API example
-              async with httpx.AsyncClient() as client:
-                  # Power off
-                  await client.post(
-                      f"http://{self.pdu_host}/outlet/{outlet}/off"
-                  )
-                  await asyncio.sleep(5)
-                  # Power on
-                  await client.post(
-                      f"http://{self.pdu_host}/outlet/{outlet}/on"
-                  )
+      async def disconnect(self) -> None:
+          """Disconnect from board."""
+          if self.writer:
+              self.writer.close()
+              await self.writer.wait_closed()
+          self.state = ConnectionState.DISCONNECTED
   ```
+  
+  **Note:** Power control via PDU has been removed from scope. Boards are manually maintained and power-cycled as needed by lab technicians.
 
 ## Data Models
 
@@ -492,14 +451,13 @@ class Board(BaseModel):
     soc_revision: str       # e.g., "rev2"
     board_ip: str           # e.g., "10.1.1.101" - Direct IP of board
     telnet_port: int = 23   # Standard telnet port
-    pdu_host: str          # e.g., "pdu-a.lab.local"
-    pdu_outlet: int        # e.g., 1
     lab_location: str      # e.g., "Lab Site A"
     health_status: str = "healthy"  # healthy/unhealthy
     failure_count: int = 0
     last_used: Optional[datetime] = None
     telnet_username: Optional[str] = None  # If login required
     telnet_password: Optional[str] = None  # If password required
+    notes: Optional[str] = None  # Manual maintenance notes
 ```
 
 ### Lease Model
@@ -583,11 +541,10 @@ deployment_params = {
 ### Manual Testing
 
 - **Board Control:** Verify direct telnet connectivity from each worker to all boards in its assigned lab site
-- **Power Control:** Test PDU API access from device manager to all lab sites
+- **Board Maintenance:** Verify manual board power-cycle procedures are documented
 - **Network Connectivity:**
   - Workers can reach orchestrator API (port 4200, 8000)
   - Workers can telnet directly to board IPs (port 23)
-  - Orchestrator can reach PDUs via HTTP/SNMP
 - **Worker Registration:** Verify all workers register with Prefect server
 - **Notifications:** Test Slack/Feishu delivery from notification service
 - **UI:** Verify Prefect UI shows all distributed workers
@@ -693,18 +650,16 @@ boards:
     soc_revision: rev2
     board_ip: 10.1.1.101
     telnet_port: 23
-    pdu_host: pdu-a.lab.local
-    pdu_outlet: 1
     lab_location: "Lab Site A"
+    notes: "Rack A, Shelf 2"
 
   - board_id: soc-a-002
     soc_family: socA
     soc_revision: rev2
     board_ip: 10.1.1.102
     telnet_port: 23
-    pdu_host: pdu-a.lab.local
-    pdu_outlet: 2
     lab_location: "Lab Site A"
+    notes: "Rack A, Shelf 3"
 
   # Lab Site B boards - Direct telnet endpoints
   - board_id: soc-b-001
@@ -712,11 +667,10 @@ boards:
     soc_revision: rev1
     board_ip: 10.1.2.101
     telnet_port: 23
-    pdu_host: pdu-b.lab.local
-    pdu_outlet: 1
     lab_location: "Lab Site B"
     telnet_username: admin  # Some boards may require login
     telnet_password: ${BOARD_B001_PASSWORD}  # Stored in env
+    notes: "Rack B, Shelf 1 - Contact lab-tech@example.com for power cycle"
 
   # ... up to 20 boards across different sites
 ```
