@@ -51,7 +51,7 @@ faker>=23.1.0  # Test data generation
 
 # Code Quality
 black>=24.1.1  # Code formatter
-ruff>=0.2.1  # Fast Python linter
+ruff>=0.6.9  # Fast Python linter
 mypy>=1.8.0  # Static type checking
 pre-commit>=3.6.2  # Git hook management
 types-pyyaml>=6.0.12.12  # Type stubs for PyYAML

@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 import redis
@@ -17,15 +18,49 @@ from .config import load_boards_config, get_board_by_family, get_board_by_id
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+# Lifespan context manager for startup and shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup
+    logger.info("Device Manager starting up...")
+    global boards_config
+    boards_config = load_boards_config(os.getenv("BOARDS_CONFIG_PATH", "/app/config/boards.yaml"))
+    logger.info(f"Loaded {len(boards_config.boards)} boards from configuration")
+    
+    # Test Redis connection
+    try:
+        r = get_redis_client()
+        r.ping()
+        logger.info("Redis connection established")
+    except Exception as e:
+        logger.error(f"Failed to connect to Redis: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Device Manager shutting down...")
+    
+    # Clean up Redis connection
+    global redis_client
+    if redis_client:
+        redis_client.close()
+
+
 # Create FastAPI app
 app = FastAPI(
     title="SoC Validation Device Manager",
     version="0.1.0",
-    description="Device management and board allocation service"
+    description="Device management and board allocation service",
+    lifespan=lifespan
 )
 
 # Redis client
 redis_client = None
+
+# Board configuration (initialized in lifespan)
+boards_config = None
 
 def get_redis_client():
     """Get Redis client instance."""
@@ -58,10 +93,6 @@ class PowerAction(BaseModel):
     action: str  # on, off, cycle
 
 
-# Load board configuration
-boards_config = load_boards_config(os.getenv("BOARDS_CONFIG_PATH", "/app/config/boards.yaml"))
-
-
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
@@ -85,6 +116,8 @@ async def health_check():
 @app.get("/api/v1/boards", response_model=List[Board])
 async def list_boards():
     """List all configured boards."""
+    if boards_config is None:
+        return []
     return boards_config.boards
 
 
@@ -235,32 +268,6 @@ async def get_queue_status():
         "estimated_wait_time": 0,
         "active_tests": 0
     }
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Startup event handler."""
-    logger.info("Device Manager starting up...")
-    logger.info(f"Loaded {len(boards_config.boards)} boards from configuration")
-    
-    # Test Redis connection
-    try:
-        r = get_redis_client()
-        r.ping()
-        logger.info("Redis connection established")
-    except Exception as e:
-        logger.error(f"Failed to connect to Redis: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown event handler."""
-    logger.info("Device Manager shutting down...")
-    
-    # Clean up Redis connection
-    global redis_client
-    if redis_client:
-        redis_client.close()
 
 
 if __name__ == "__main__":

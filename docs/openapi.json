@@ -1,0 +1,571 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SoC Validation Device Manager",
+    "description": "Device management and board allocation service",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/boards": {
+      "get": {
+        "summary": "List Boards",
+        "description": "List all configured boards.",
+        "operationId": "list_boards_api_v1_boards_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Board"
+                  },
+                  "type": "array",
+                  "title": "Response List Boards Api V1 Boards Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/boards/{board_id}": {
+      "get": {
+        "summary": "Get Board",
+        "description": "Get specific board information.",
+        "operationId": "get_board_api_v1_boards__board_id__get",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Board Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lease": {
+      "post": {
+        "summary": "Acquire Lease",
+        "description": "Acquire a board lease.",
+        "operationId": "acquire_lease_api_v1_lease_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lease/{lease_id}": {
+      "delete": {
+        "summary": "Release Lease",
+        "description": "Release a board lease.",
+        "operationId": "release_lease_api_v1_lease__lease_id__delete",
+        "parameters": [
+          {
+            "name": "lease_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lease Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/power/{board_id}": {
+      "post": {
+        "summary": "Control Power",
+        "description": "Control board power via PDU.",
+        "operationId": "control_power_api_v1_power__board_id__post",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Board Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PowerAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tests/submit": {
+      "post": {
+        "summary": "Submit Test",
+        "description": "Submit a test to the queue.",
+        "operationId": "submit_test_api_v1_tests_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tests/queue": {
+      "get": {
+        "summary": "Get Queue Status",
+        "description": "Get current queue status.",
+        "operationId": "get_queue_status_api_v1_tests_queue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Board": {
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "title": "Board Id",
+            "description": "Unique board identifier"
+          },
+          "soc_family": {
+            "type": "string",
+            "title": "Soc Family",
+            "description": "SoC family (e.g., socA, socB)"
+          },
+          "board_ip": {
+            "type": "string",
+            "title": "Board Ip",
+            "description": "Board IP address"
+          },
+          "telnet_port": {
+            "type": "integer",
+            "title": "Telnet Port",
+            "description": "Telnet port",
+            "default": 23
+          },
+          "pdu_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdu Host",
+            "description": "PDU hostname"
+          },
+          "pdu_outlet": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdu Outlet",
+            "description": "PDU outlet number"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "description": "Physical location",
+            "default": "unknown"
+          },
+          "health_status": {
+            "type": "string",
+            "title": "Health Status",
+            "description": "Board health status",
+            "default": "healthy"
+          },
+          "failure_count": {
+            "type": "integer",
+            "title": "Failure Count",
+            "description": "Failure count",
+            "default": 0
+          },
+          "last_used": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used",
+            "description": "Last usage timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "board_id",
+          "soc_family",
+          "board_ip"
+        ],
+        "title": "Board",
+        "description": "Board configuration model.",
+        "example": {
+          "board_id": "soc-a-001",
+          "board_ip": "10.1.1.101",
+          "location": "lab-site-a",
+          "pdu_host": "pdu-a.lab.local",
+          "pdu_outlet": 1,
+          "soc_family": "socA",
+          "telnet_port": 23
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "redis_connected": {
+            "type": "boolean",
+            "title": "Redis Connected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version",
+          "redis_connected"
+        ],
+        "title": "HealthResponse",
+        "description": "Health check response."
+      },
+      "LeaseRequest": {
+        "properties": {
+          "board_family": {
+            "type": "string",
+            "title": "Board Family",
+            "description": "Target SoC family"
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "description": "Lease timeout in seconds",
+            "default": 1800
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "description": "Priority (1=high, 2=normal, 3=low)",
+            "default": 2
+          }
+        },
+        "type": "object",
+        "required": [
+          "board_family"
+        ],
+        "title": "LeaseRequest",
+        "description": "Board lease request model.",
+        "example": {
+          "board_family": "socA",
+          "priority": 2,
+          "timeout": 1800
+        }
+      },
+      "LeaseResponse": {
+        "properties": {
+          "lease_id": {
+            "type": "string",
+            "title": "Lease Id"
+          },
+          "board_id": {
+            "type": "string",
+            "title": "Board Id"
+          },
+          "board_ip": {
+            "type": "string",
+            "title": "Board Ip"
+          },
+          "telnet_port": {
+            "type": "integer",
+            "title": "Telnet Port"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lease_id",
+          "board_id",
+          "board_ip",
+          "telnet_port",
+          "expires_at"
+        ],
+        "title": "LeaseResponse",
+        "description": "Lease allocation response."
+      },
+      "PowerAction": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "PowerAction",
+        "description": "Power control action."
+      },
+      "TestSubmission": {
+        "properties": {
+          "test_binary": {
+            "type": "string",
+            "title": "Test Binary",
+            "description": "Path to test binary"
+          },
+          "board_family": {
+            "type": "string",
+            "title": "Board Family",
+            "description": "Target board family"
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "description": "Test priority",
+            "default": 2
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "description": "Test timeout in seconds",
+            "default": 1800
+          }
+        },
+        "type": "object",
+        "required": [
+          "test_binary",
+          "board_family"
+        ],
+        "title": "TestSubmission",
+        "description": "Test submission request model.",
+        "example": {
+          "board_family": "socA",
+          "priority": 2,
+          "test_binary": "/path/to/test",
+          "timeout": 1800
+        }
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

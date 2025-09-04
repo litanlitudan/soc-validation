@@ -1,6 +1,6 @@
 """Data models for device management."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -19,8 +19,8 @@ class Board(BaseModel):
     failure_count: int = Field(default=0, description="Failure count")
     last_used: Optional[datetime] = Field(None, description="Last usage timestamp")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "board_id": "soc-a-001",
                 "soc_family": "socA",
@@ -31,6 +31,7 @@ class Board(BaseModel):
                 "location": "lab-site-a"
             }
         }
+    )
 
 
 class LeaseRequest(BaseModel):
@@ -40,14 +41,15 @@ class LeaseRequest(BaseModel):
     timeout: int = Field(default=1800, description="Lease timeout in seconds")
     priority: int = Field(default=2, ge=1, le=3, description="Priority (1=high, 2=normal, 3=low)")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "board_family": "socA",
                 "timeout": 1800,
                 "priority": 2
             }
         }
+    )
 
 
 class Lease(BaseModel):
@@ -60,8 +62,8 @@ class Lease(BaseModel):
     expires_at: datetime = Field(..., description="Lease expiration time")
     status: str = Field(default="active", description="Lease status")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "lease_id": "lease-123e4567-e89b-12d3-a456-426614174000",
                 "board_id": "soc-a-001",
@@ -71,6 +73,7 @@ class Lease(BaseModel):
                 "status": "active"
             }
         }
+    )
 
 
 class TestSubmission(BaseModel):
@@ -81,8 +84,8 @@ class TestSubmission(BaseModel):
     priority: int = Field(default=2, ge=1, le=3, description="Test priority")
     timeout: int = Field(default=1800, description="Test timeout in seconds")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "test_binary": "/path/to/test",
                 "board_family": "socA",
@@ -90,6 +93,7 @@ class TestSubmission(BaseModel):
                 "timeout": 1800
             }
         }
+    )
 
 
 class TestResult(BaseModel):
@@ -105,8 +109,8 @@ class TestResult(BaseModel):
     output_file: Optional[str] = Field(None, description="Path to output file")
     error_message: Optional[str] = Field(None, description="Error message if failed")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "result_id": "result-123e4567-e89b-12d3-a456-426614174000",
                 "flow_run_id": "flow-run-123",
@@ -118,3 +122,4 @@ class TestResult(BaseModel):
                 "output_file": "/data/artifacts/result-123/output.log"
             }
         }
+    )
