@@ -31,12 +31,12 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     logger.info("Device Manager starting up...")
-    
+
     # Load board configuration
     global boards_config
     boards_config = load_boards_config(os.getenv("BOARDS_CONFIG_PATH", "/app/config/boards.yaml"))
     logger.info(f"Loaded {len(boards_config.boards)} boards from configuration")
-    
+
     # Initialize Redis connection and device manager
     try:
         redis_client = await initialize_redis()
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
             blocking_timeout=30,    # Wait up to 30 seconds for lock
             retry_interval=0.5      # Check every 500ms when blocking
         )
-        
+
         global device_manager
         device_manager = DeviceManager(
             config=boards_config,
@@ -60,12 +60,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize Redis: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Device Manager shutting down...")
-    
+
     # Clean up Redis connection
     await cleanup_redis()
 
@@ -94,7 +94,7 @@ class LeaseResponse(BaseModel):
     board_ip: str
     telnet_port: int
     expires_at: datetime
-    
+
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
@@ -108,7 +108,7 @@ async def health_check():
         redis_connected = True
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
-    
+
     return HealthResponse(
         status="healthy" if redis_connected else "degraded",
         service="device-manager",
@@ -142,18 +142,18 @@ async def acquire_lease(request: LeaseRequest):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device manager not initialized"
         )
-    
+
     # Use device manager to acquire board
     lease = await device_manager.acquire_board(request)
-    
+
     if not lease:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"No available boards for family {request.board_family}"
         )
-    
+
     logger.info(f"Lease {lease.lease_id} acquired for board {lease.board_id}")
-    
+
     return LeaseResponse(
         lease_id=lease.lease_id,
         board_id=lease.board_id,
@@ -171,18 +171,18 @@ async def release_lease(lease_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device manager not initialized"
         )
-    
+
     # Use device manager to release board
     released = await device_manager.release_board(lease_id)
-    
+
     if not released:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Lease {lease_id} not found"
         )
-    
+
     logger.info(f"Lease {lease_id} released")
-    
+
     return {"status": "released", "lease_id": lease_id}
 
 
@@ -191,9 +191,9 @@ async def submit_test(submission: TestSubmission):
     """Submit a test to the queue."""
     # TODO: Integrate with Prefect to create a deployment run
     test_id = str(uuid.uuid4())
-    
+
     logger.info(f"Test {test_id} submitted: {submission.test_binary} on {submission.board_family}")
-    
+
     return {
         "test_id": test_id,
         "status": "queued",
@@ -208,17 +208,17 @@ async def get_queue_status():
     """Get current queue status."""
     if not device_manager:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail="Device manager not initialized"
         )
-    
+
     # Get queue status from device manager
     status = await device_manager.get_queue_status()
-    
+
     # TODO: Integrate with Prefect for actual test queue metrics
     status["queue_size"] = 0
     status["estimated_wait_time"] = 0
-    
+
     return status
 
 
@@ -227,19 +227,19 @@ async def get_board_status(board_id: str):
     """Get complete status for a specific board."""
     if not device_manager:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail="Device manager not initialized"
         )
-    
+
     # Use device manager to get board status
     status = await device_manager.get_board_status(board_id)
-    
+
     if "error" in status:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail=status["error"]
         )
-    
+
     return status
 
 
@@ -251,21 +251,21 @@ async def extend_lease(lease_id: str, additional_time: int = 1800):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device manager not initialized"
         )
-    
+
     # Use device manager to extend lease
     extended = await device_manager.extend_lease(lease_id, additional_time)
-    
+
     if not extended:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Failed to extend lease {lease_id}"
         )
-    
+
     # Get updated lease info
     lease = await device_manager.get_lease_info(lease_id)
-    
+
     logger.info(f"Lease {lease_id} extended by {additional_time} seconds")
-    
+
     return {
         "status": "extended",
         "lease_id": lease_id,

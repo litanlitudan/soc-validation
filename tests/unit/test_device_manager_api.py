@@ -2,12 +2,12 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, AsyncMock
 import json
 from datetime import datetime, timedelta
 
 from src.device_manager.api import app
-from src.device_manager.models import Board, LeaseRequest, TestSubmission
+from src.device_manager.models import Board, LeaseRequest, TestSubmission, Lease
 
 
 client = TestClient(app)
@@ -18,7 +18,9 @@ def test_health_check():
     with patch('src.device_manager.api.get_redis_client') as mock_redis:
         # Mock successful Redis connection
         mock_redis_instance = Mock()
-        mock_redis_instance.ping.return_value = True
+        mock_client = AsyncMock()
+        mock_client.ping = AsyncMock(return_value=True)
+        mock_redis_instance.get_client = AsyncMock(return_value=mock_client)
         mock_redis.return_value = mock_redis_instance
         
         response = client.get("/api/health")
@@ -35,7 +37,7 @@ def test_health_check_redis_down():
     with patch('src.device_manager.api.get_redis_client') as mock_redis:
         # Mock Redis connection failure
         mock_redis_instance = Mock()
-        mock_redis_instance.ping.side_effect = Exception("Connection failed")
+        mock_redis_instance.get_client = AsyncMock(side_effect=Exception("Connection failed"))
         mock_redis.return_value = mock_redis_instance
         
         response = client.get("/api/health")
@@ -54,8 +56,6 @@ def test_list_boards():
             soc_family="socA",
             board_ip="10.1.1.101",
             telnet_port=23,
-            pdu_host="pdu-a.lab.local",
-            pdu_outlet=1,
             location="lab-site-a"
         )
         mock_config.boards = [mock_board]
@@ -99,23 +99,20 @@ def test_get_board_not_found():
 
 def test_acquire_lease():
     """Test acquiring a board lease."""
-    with patch('src.device_manager.api.get_redis_client') as mock_redis, \
-         patch('src.device_manager.api.get_board_by_family') as mock_get_board:
-        
-        # Mock Redis client
-        mock_redis_instance = Mock()
-        mock_redis_instance.exists.return_value = False
-        mock_redis_instance.set.return_value = True
-        mock_redis.return_value = mock_redis_instance
-        
-        # Mock board
-        mock_board = Board(
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock lease response
+        mock_lease = Lease(
+            lease_id="test-lease-123",
             board_id="soc-a-001",
-            soc_family="socA",
             board_ip="10.1.1.101",
-            telnet_port=23
+            telnet_port=23,
+            lock_token="token-abc123",
+            acquired_at=datetime.now(),
+            expires_at=datetime.now() + timedelta(seconds=1800),
+            priority=2,
+            status="active"
         )
-        mock_get_board.return_value = mock_board
+        mock_device_manager.acquire_board = AsyncMock(return_value=mock_lease)
         
         request_data = {
             "board_family": "socA",
@@ -133,90 +130,44 @@ def test_acquire_lease():
 
 
 def test_acquire_lease_board_busy():
-    """Test acquiring lease when board is already in use."""
-    with patch('src.device_manager.api.get_redis_client') as mock_redis, \
-         patch('src.device_manager.api.get_board_by_family') as mock_get_board:
-        
-        # Mock Redis client - board already locked
-        mock_redis_instance = Mock()
-        mock_redis_instance.exists.return_value = True
-        mock_redis.return_value = mock_redis_instance
-        
-        # Mock board
-        mock_board = Board(
-            board_id="soc-a-001",
-            soc_family="socA",
-            board_ip="10.1.1.101",
-            telnet_port=23
-        )
-        mock_get_board.return_value = mock_board
+    """Test acquiring lease when no boards available."""
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock no board available
+        mock_device_manager.acquire_board = AsyncMock(return_value=None)
         
         request_data = {
             "board_family": "socA",
-            "timeout": 1800
+            "timeout": 1800,
+            "priority": 2
         }
         
         response = client.post("/api/v1/lease", json=request_data)
         assert response.status_code == 409
-        assert "already in use" in response.json()["detail"]
+        assert "No available boards" in response.json()["detail"]
 
 
 def test_release_lease():
     """Test releasing a board lease."""
-    with patch('src.device_manager.api.get_redis_client') as mock_redis:
-        # Mock Redis client
-        mock_redis_instance = Mock()
-        lease_data = {
-            "lease_id": "test-lease-123",
-            "board_id": "soc-a-001",
-            "acquired_at": datetime.now().isoformat(),
-            "expires_at": (datetime.now() + timedelta(seconds=1800)).isoformat()
-        }
-        mock_redis_instance.get.return_value = json.dumps(lease_data)
-        mock_redis.return_value = mock_redis_instance
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock successful release
+        mock_device_manager.release_board = AsyncMock(return_value=True)
         
         response = client.delete("/api/v1/lease/test-lease-123")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "released"
         assert data["lease_id"] == "test-lease-123"
-        assert data["board_id"] == "soc-a-001"
 
 
 def test_release_lease_not_found():
     """Test releasing non-existent lease."""
-    with patch('src.device_manager.api.get_redis_client') as mock_redis:
-        # Mock Redis client - lease not found
-        mock_redis_instance = Mock()
-        mock_redis_instance.get.return_value = None
-        mock_redis.return_value = mock_redis_instance
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock lease not found
+        mock_device_manager.release_board = AsyncMock(return_value=False)
         
         response = client.delete("/api/v1/lease/invalid-lease")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
-
-
-def test_control_power():
-    """Test board power control."""
-    with patch('src.device_manager.api.get_board_by_id') as mock_get_board:
-        # Mock board with PDU configuration
-        mock_board = Board(
-            board_id="soc-a-001",
-            soc_family="socA",
-            board_ip="10.1.1.101",
-            telnet_port=23,
-            pdu_host="pdu-a.lab.local",
-            pdu_outlet=1
-        )
-        mock_get_board.return_value = mock_board
-        
-        request_data = {"action": "cycle"}
-        
-        response = client.post("/api/v1/power/soc-a-001", json=request_data)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
-        assert data["action"] == "cycle"
 
 
 def test_submit_test():
@@ -239,9 +190,85 @@ def test_submit_test():
 
 def test_get_queue_status():
     """Test getting queue status."""
-    response = client.get("/api/v1/tests/queue")
-    assert response.status_code == 200
-    data = response.json()
-    assert "queue_size" in data
-    assert "estimated_wait_time" in data
-    assert "active_tests" in data
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock queue status
+        mock_device_manager.get_queue_status = AsyncMock(return_value={
+            "active_tests": 2,
+            "available_boards": 3,
+            "quarantined_boards": 1
+        })
+        
+        response = client.get("/api/v1/tests/queue")
+        assert response.status_code == 200
+        data = response.json()
+        assert "queue_size" in data
+        assert "estimated_wait_time" in data
+        assert "active_tests" in data
+
+
+def test_get_board_status():
+    """Test getting board status."""
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock board status
+        mock_device_manager.get_board_status = AsyncMock(return_value={
+            "board_id": "soc-a-001",
+            "health_status": "healthy",
+            "is_allocated": False,
+            "current_lease": None
+        })
+        
+        response = client.get("/api/v1/boards/soc-a-001/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["board_id"] == "soc-a-001"
+        assert data["health_status"] == "healthy"
+
+
+def test_get_board_status_not_found():
+    """Test getting status for non-existent board."""
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock board not found
+        mock_device_manager.get_board_status = AsyncMock(return_value={
+            "error": "Board not found"
+        })
+        
+        response = client.get("/api/v1/boards/invalid-board/status")
+        assert response.status_code == 404
+        assert "Board not found" in response.json()["detail"]
+
+
+def test_extend_lease():
+    """Test extending a lease."""
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock successful extension
+        mock_device_manager.extend_lease = AsyncMock(return_value=True)
+        mock_lease = Lease(
+            lease_id="test-lease-123",
+            board_id="soc-a-001",
+            board_ip="10.1.1.101",
+            telnet_port=23,
+            lock_token="token-abc123",
+            acquired_at=datetime.now(),
+            expires_at=datetime.now() + timedelta(seconds=3600),
+            priority=2,
+            status="active"
+        )
+        mock_device_manager.get_lease_info = AsyncMock(return_value=mock_lease)
+        
+        response = client.post("/api/v1/lease/test-lease-123/extend?additional_time=1800")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "extended"
+        assert data["lease_id"] == "test-lease-123"
+        assert data["board_id"] == "soc-a-001"
+
+
+def test_extend_lease_failed():
+    """Test failing to extend a lease."""
+    with patch('src.device_manager.api.device_manager') as mock_device_manager:
+        # Mock extension failure
+        mock_device_manager.extend_lease = AsyncMock(return_value=False)
+        
+        response = client.post("/api/v1/lease/invalid-lease/extend?additional_time=1800")
+        assert response.status_code == 409
+        assert "Failed to extend lease" in response.json()["detail"]
