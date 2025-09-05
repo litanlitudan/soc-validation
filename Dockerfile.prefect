@@ -1,13 +1,58 @@
-# Custom Prefect Server image with aiosqlite support
-FROM prefecthq/prefect:3-python3.12
+# Dockerfile for Prefect Server with optimized configuration
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
-# Install curl for health checks and aiosqlite for async SQLite support
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir aiosqlite
+# System basics (curl for healthcheck; tini for clean PID 1)
+RUN apt-get update && apt-get install -y --no-install-recommends curl tini \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy initialization script
-COPY scripts/init_prefect.py /app/init_prefect.py
-RUN chmod +x /app/init_prefect.py
+ENV PREFECT_HOME=/usr/src/server
 
-# Use the initialization script as the command
-CMD ["python", "/app/init_prefect.py"]
+# ---- Database (default: SQLite with aiosqlite for async support) ----
+ENV PREFECT_API_DATABASE_CONNECTION_URL="sqlite+aiosqlite:///${PREFECT_HOME}/prefect.db"
+ENV PREFECT_API_DATABASE_ECHO="False"
+ENV PREFECT_API_DATABASE_MIGRATE_ON_START="True"
+
+# ---- Networking/UI ----
+# Port configuration (can be overridden at build time with --build-arg PORT=xxxx)
+ARG PORT=4200
+ENV PREFECT_SERVER_API_HOST="0.0.0.0"
+ENV PREFECT_SERVER_API_PORT="${PORT}"
+ENV CONTAINER_PORT="${PORT}"
+# API URL will be set at runtime via docker run -e PREFECT_API_URL
+# ENV PREFECT_API_URL="http://localhost:${PORT}/api"
+
+# Disable analytics for privacy
+ENV PREFECT_SERVER_ANALYTICS_ENABLED="false"
+
+# (Optional) lock down CSRF in prod behind a domain/reverse proxy
+# ENV PREFECT_SERVER_CSRF_PROTECTION_ENABLED="True"
+
+WORKDIR /usr/src/server
+
+# Install Prefect 3.x and required dependencies for soc-validation
+# - prefect>=3.0: Core orchestration engine
+# - httpx>=0.27: Used by blocks/flows for HTTP operations
+# - aiosqlite: Async SQLite support for better performance
+# - prometheus-client>=0.20.0: Required for Prefect 3.0.0 compatibility
+RUN pip install --no-cache-dir \
+    "prefect>=3.0" \
+    "httpx>=0.27" \
+    "aiosqlite>=0.19" \
+    "prometheus-client>=0.20.0"
+
+# Copy initialization script if needed (optional)
+# COPY scripts/init_prefect.py /app/init_prefect.py
+# RUN chmod +x /app/init_prefect.py
+
+# Create volume mount point for persistent data
+VOLUME ["${PREFECT_HOME}"]
+
+# Healthcheck: Prefect serves /api/health when up
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=40s \
+  CMD curl -f http://localhost:${CONTAINER_PORT}/api/health || exit 1
+
+EXPOSE ${CONTAINER_PORT}
+
+# Use tini as PID 1 for proper signal handling, then start Prefect Server
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD sh -c "prefect server start --host 0.0.0.0 --port ${CONTAINER_PORT}"

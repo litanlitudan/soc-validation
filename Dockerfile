@@ -1,7 +1,7 @@
 # Dockerfile for SoC Validation Infrastructure
 
 # Base stage with common dependencies
-FROM python:3.12-slim AS base
+FROM public.ecr.aws/docker/library/python:3.12-slim AS base
 
 # Set working directory
 WORKDIR /app
